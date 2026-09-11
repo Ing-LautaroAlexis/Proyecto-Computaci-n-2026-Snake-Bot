@@ -1,72 +1,101 @@
-# codechallenge-test-client
+# SnakeBot
 
-A minimal **bot client** for [The Code Challenge](https://codechallenge.up.railway.app).
-It connects to the match server over a websocket using your bot's token,
-auto-accepts challenges, and plays. Use it as a starting point (and a smoke
-test) for writing your own bot.
+Bot competitivo de Snake desarrollado para un proyecto universitario. Este
+repositorio conserva la evolución Gemini → ChatGPT Plus y una copia operativa
+de **ChatGPT Plus V8.0 (`botv8.0_v5.py`)**.
 
-## How it works
+## Estructura
 
-Your bot authenticates with its **token** (from **My Bots** on the web) and
-opens a websocket to the server:
-
-```
-wss://codechallenge-server.up.railway.app/ws?token=<YOUR_BOT_TOKEN>   # production
-ws://localhost:5000/ws?token=<YOUR_BOT_TOKEN>                          # local
-```
-
-The server then sends events and the bot replies with actions (JSON):
-
-| Event          | The bot does…                                                        |
-| -------------- | -------------------------------------------------------------------- |
-| `list_users`   | nothing (just who's online)                                          |
-| `challenge`    | replies `accept_challenge` with the `challenge_id`                   |
-| `your_turn`    | plays a move — replies `move` with the move data + the `turn_token`  |
-| `game_over`    | nothing (the match ended)                                            |
-
-> The example move logic in `run.py` plays **Connect 4** (it picks a random
-> column). That `process_your_turn` / `process_move` part is exactly where you
-> put your own strategy — and where you adapt it to another game's action shape.
-
-## Requirements
-
-- Python 3.9+
-- `websockets` (see `requirements.txt`)
-
-## Run
-
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-python run.py <YOUR_BOT_TOKEN>
+```text
+versions/
+  gemini/{v1,v2,v3,v3.1,v5,v5.5}/
+  chatgpt/{v7.6,modular,v8.0}/
+src/bot_final/       # V8 y sus dependencias de ejecución
+tests/              # Pruebas existentes adaptadas a la ubicación de V8
+docs/evolucion.md
+unclassified/       # Versiones adicionales sin etapa asignada
+.github/workflows/ci.yml
+arena.py            # Simulador y visor local, conservado sin cambios
+requirements.txt
+requirements-dev.txt
+pytest.ini
 ```
 
-Get `<YOUR_BOT_TOKEN>` from **My Bots** in the web app. By default `run.py`
-connects to the production server; switch the `uri` in `run.py` to the
-`localhost` line to play against a local server.
+Los archivos históricos mantienen sus bytes originales. La copia de V8 en
+`src/bot_final/` coincide con `versions/chatgpt/v8.0/`. El runtime y el visualizador
+incluidos junto a V7.6 y V8 proceden de R4, sin cambios: no se encontraron copias
+independientes en las carpetas originales de esas versiones.
 
-> `start.sh` / `start_dev.sh` are convenience runners kept out of git because
-> they may embed your personal token.
+La cronología y las diferencias observables están en [docs/evolucion.md](docs/evolucion.md).
+Los commits incorporan archivos históricos en el presente; no recrean fechas de
+trabajo ni certifican la autoría de un modelo por el contenido del código.
 
-## Game logs
+## Instalación
 
-When a match ends, the client writes a **`game_<game_id>.log`** in the working
-directory with everything that happened: each event received (`<`) and action
-sent (`>`), as JSON, ending with the `game_over` event. Useful for replaying or
-debugging a match. These files are git-ignored.
+Se utiliza Python 3.12.
 
-```
-< {"event": "your_turn", "data": {"board": "...", "game_id": "g_9f", "turn_token": "t_01", ...}}
-> {"action": "move", "data": {"game_id": "g_9f", "turn_token": "t_01", "col": 3}}
-...
-< {"event": "game_over", "data": {"board": "...", "game_id": "g_9f", ...}}
+```sh
+python -m venv .venv
 ```
 
-## Write your own bot
+Activar con `.venv\Scripts\Activate.ps1` en PowerShell, o
+`source .venv/bin/activate` en Linux/macOS.
 
-You don't need this client — any websocket client works. The contract is:
+```sh
+python -m pip install -r requirements.txt
+```
 
-1. Connect to `ws(s)://<server>/ws?token=<your bot token>`.
-2. On `challenge`, send `{"action": "accept_challenge", "data": {"challenge_id": "..."}}`.
-3. On `your_turn`, read `data` (board / game state, `game_id`, `turn_token`) and
-   send your move: `{"action": "move", "data": { ... , "turn_token": "..." }}`.
+## Ejecución
+
+```sh
+python src/bot_final/botv8.0_v5.py TU_TOKEN
+```
+
+El runtime abre la conexión WebSocket y el visualizador Pygame. Se necesita un
+entorno gráfico para jugar con el visor. Los mensajes de ayuda internos conservan
+el nombre de V7.6 porque no se modificó código existente.
+
+Para enfrentamientos locales y el visor de la arena:
+
+```sh
+python arena.py
+```
+
+La arena descubre bots por sus archivos; las copias histórica y operativa de V8
+pueden aparecer por separado. `R`/Enter reinicia, `N` cambia la semilla y `Tab`
+intercambia los lados. Los resultados se guardan localmente en `arena_results/`.
+`start.sh` no se utiliza y queda excluido de Git.
+
+## Tests y cobertura
+
+```sh
+python -m pip install -r requirements-dev.txt
+python -m pytest
+```
+
+La configuración ejecuta las pruebas de reglas, simulación, estrategia, runtime,
+visualizador, regresiones, equivalencia y los cinco escenarios de arena existentes.
+Los tests apuntan a `src/bot_final/`. El snapshot histórico se conserva como oráculo,
+no como bot desplegable. Un adaptador permite que pytest recoja los chequeos que
+antes se ejecutaban solo como scripts. Sus escenarios y aserciones se conservan.
+
+La cobertura de líneas se mide sobre **los tres archivos de `src/bot_final/`**,
+incluidos runtime y visualizador, con umbral obligatorio del 90 %. Los bots
+históricos y el simulador auxiliar `arena.py` no integran ese denominador.
+No se excluyen funciones del bot para elevar el porcentaje. El reporte local
+`coverage.xml` no se publica. El porcentaje mide ejecución de líneas, no fuerza
+competitiva ni funcionamiento real de la red o pantalla.
+
+## Integración continua y Git
+
+GitHub Actions ejecuta instalación, comprobación de sintaxis y `python -m pytest`
+en cada push y pull request. La prueba falla si la cobertura queda por debajo del
+90 %. Flujo: `development` → verificación → merge a `main`.
+
+Configuración basada en la documentación de
+[GitHub Actions para Python](https://docs.github.com/en/actions/tutorials/build-and-test-code/python)
+y [pytest-cov](https://pytest-cov.readthedocs.io/en/stable/config.html).
+
+Los entornos, cachés, resultados, reportes generados y respaldos permanecen fuera
+del historial. La reorganización no introduce optimizaciones ni correcciones en
+los bots existentes.

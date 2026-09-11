@@ -133,3 +133,18 @@ start_dev.sh
 
 # game logs written at the end of each match
 game_*.log
+
+# Local artifacts and migration backup (never published)
+/.local_backup/
+/arena_results/
+/competitive_audit/
+/start.sh
+/unclassified/data
+/unclassified/import asyncio.py
+/coverage/
+/coverage.xml
+/.coverage*
+/htmlcov/
+/.pytest_cache/
+/logs/
+*.tmp
