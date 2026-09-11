@@ -86,6 +86,10 @@ No se excluyen funciones del bot para elevar el porcentaje. El reporte local
 `coverage.xml` no se publica. El porcentaje mide ejecución de líneas, no fuerza
 competitiva ni funcionamiento real de la red o pantalla.
 
+Validación de esta reorganización: **76 tests aprobados y 95,91 % de cobertura**
+en Python 3.12.5. La cobertura del runtime por separado es 89 %; el umbral del
+90 % corresponde al conjunto operativo completo, no a cada archivo.
+
 ## Integración continua y Git
 
 GitHub Actions ejecuta instalación, comprobación de sintaxis y `python -m pytest`

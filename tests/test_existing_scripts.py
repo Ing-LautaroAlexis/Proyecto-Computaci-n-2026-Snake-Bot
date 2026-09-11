@@ -8,8 +8,8 @@ def test_existing_equivalence():
     equivalence.run_equivalence()
 
 
-@pytest.mark.parametrize("index,size", enumerate(
+@pytest.mark.parametrize("index,size", list(enumerate(
     [(12, 20), (20, 12), (12, 12), (20, 20), (17, 14)], 1
-))
+)))
 def test_existing_arena_smoke(index, size):
     smoke.run_smoke_case(8800 + index, size)
