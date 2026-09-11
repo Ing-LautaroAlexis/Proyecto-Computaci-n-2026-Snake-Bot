@@ -1,0 +1,12 @@
+SNAKE V7.6 R4 - ESTRUCTURA MODULAR
+
+PARA JUGAR solo importan estos 3 archivos, juntos en la misma carpeta:
+- botv7.6_v4.py       -> estrategia (este es el unico que iremos cambiando)
+- snake_runtime.py    -> conexion/protocolo WebSocket (congelado)
+- snake_visualizer.py -> visualizador Pygame (congelado)
+
+Ejecutar como siempre:
+    python botv7.6_v4.py TU_TOKEN
+
+La carpeta tests/ NO participa durante una partida.
+Esta separada para coverage/regresiones y no hay que tocarla al jugar.

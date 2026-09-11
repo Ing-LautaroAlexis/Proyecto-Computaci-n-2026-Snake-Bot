@@ -1,0 +1,5 @@
+# Preserve source snapshots byte-for-byte, including their original line endings.
+*.py -text
+*.snapshot -text
+versions/** -text
+unclassified/** -text
