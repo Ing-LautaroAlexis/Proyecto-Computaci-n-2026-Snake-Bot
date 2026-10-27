@@ -139,8 +139,6 @@ game_*.log
 /arena_results/
 /competitive_audit/
 /start.sh
-/unclassified/data
-/unclassified/import asyncio.py
 /coverage/
 /coverage.xml
 /.coverage*

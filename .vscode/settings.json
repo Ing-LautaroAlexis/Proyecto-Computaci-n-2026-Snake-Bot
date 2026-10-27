@@ -1,0 +1,19 @@
+{
+  // Oculta en el panel de VS Code lo que no hace falta ver al programar.
+  // Los archivos siguen existiendo; para verlos de nuevo, borrá la línea
+  // correspondiente o poné "false".
+  "files.exclude": {
+    "**/__pycache__": true,
+    ".pytest_cache": true,
+    ".venv": true,
+    ".local_backup": true,
+    ".github": true,
+    ".gitattributes": true,
+    "arena_results": true,
+    "coverage.xml": true,
+    ".coverage": true
+  },
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false
+}
