@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 TESTS_DIR = Path(__file__).resolve().parent
 ROOT = TESTS_DIR.parent / "src" / "bot_final"
-BOT = ROOT / 'botv8.0_v5.py'
+BOT = ROOT / 'bot_3.9.3.py'
 for name in ('pygame', 'websockets'):
     sys.modules.setdefault(name, types.ModuleType(name))
 spec = importlib.util.spec_from_file_location('botv76_quality', BOT)

@@ -9,7 +9,7 @@ from pathlib import Path
 
 TESTS_DIR = Path(__file__).resolve().parent
 ROOT = TESTS_DIR.parent / "src" / "bot_final"
-CURRENT = ROOT / "botv8.0_v5.py"
+CURRENT = ROOT / "bot_3.9.3.py"
 REFERENCE = TESTS_DIR / "REFERENCE_DO_NOT_DEPLOY.snapshot"
 SCENARIOS = 100
 NODE_BUDGET = 24
@@ -99,6 +99,10 @@ def _compare_one(old, new, payload, index):
 def run_equivalence():
     old = load_source_module(REFERENCE, "old_")
     new = load_source_module(CURRENT, "new_")
+    # 3.9.2: la carrera por el número que toca y la espera al lado del siguiente son
+    # estrategia nueva (se prueban en test_strategy_392.py); acá se compara el motor.
+    new.RACE_ENABLED = False
+    new.CAMP_ENABLED = False
     rng = random.Random(760_2026)
     counts = {"UP": 0, "DOWN": 0, "LEFT": 0, "RIGHT": 0}
     for index in range(SCENARIOS):

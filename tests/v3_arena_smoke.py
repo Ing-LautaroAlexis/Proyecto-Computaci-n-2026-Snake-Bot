@@ -10,7 +10,7 @@ from pathlib import Path
 
 TESTS_DIR = Path(__file__).resolve().parent
 ROOT = TESTS_DIR.parent / "src" / "bot_final"
-BOT = ROOT / "botv8.0_v5.py"
+BOT = ROOT / "bot_3.9.3.py"
 DIRS = {"UP": (-1, 0), "DOWN": (1, 0), "LEFT": (0, -1), "RIGHT": (0, 1)}
 
 for dependency in ("pygame", "websockets"):
