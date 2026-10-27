@@ -17,7 +17,9 @@ victorias. Los números de versión no prueban una mejora de rendimiento.
 | Gemini V5.5 | `botV5.5.py` | Contiene `get_strict_legal_moves`, seguimiento en `update_and_get_state` y funciones de evaluación llamadas V6. Ese nombre interno no cambia su clasificación solicitada como V5.5. |
 | ChatGPT Plus V7.6 | `botv7.6_v3.py` | Motor de decisiones separado del runtime; parsing de dimensiones, comida numerada, historial de cuerpos, búsqueda y capas tácticas. Esta separación ya existía en el archivo recibido. |
 | Modularización R4 | `botv7.6_v4.py`, `snake_runtime.py`, `snake_visualizer.py` | Paquete recibido con estrategia, conexión y visor separados. Frente al archivo V7.6 recibido añade 15 funciones auxiliares y cambia cinco funciones existentes, principalmente congelación/comida segura. No se presenta como una refactorización puramente estructural. |
-| ChatGPT Plus V8.0 | `botv8.0_v5.py` | Añade `_fast_bfs_distances`, con índices enteros y buffers planos. `bfs_distances` y `_flood_distances` delegan en ese núcleo. Las restantes funciones conservan su AST respecto de R4. |
+| ChatGPT Plus V8.0 (2.3.3) | `botv8.0_v5.py` | Añade `_fast_bfs_distances`, con índices enteros y buffers planos. `bfs_distances` y `_flood_distances` delegan en ese núcleo. Las restantes funciones conservan su AST respecto de R4. |
+| 2.6.1 (v6actualizado) | `v6.py` | V8.0 + reglas v4 (come X y simula el multiplicador), v5 (muro #) y v6 (todas las copias del dígito). |
+| 3.9.1 | `src/bot_final/bot_3.9.1.py` | 2.6.1 + reglas v7–v10: zona de bombas como muro, `*` de disparos sin perder los dígitos, Ⓐ/Ⓑ/⭐ pisables, cabeza invencible en minúscula. Todavía no dispara. |
 
 ## Integridad y dependencias
 
@@ -52,8 +54,15 @@ incorporación ordenada de las versiones, con fechas reales de incorporación.
 
 ## Archivos adicionales
 
-`botv6.py` y `botv6.1.py` permanecen en `unclassified/` porque no corresponden a
-una etapa pedida. Los archivos sin clasificar que contienen credenciales se
-conservan solo localmente y se excluyen de Git. Los scripts y reportes de
-`competitive_audit/` permanecen locales: no forman parte de esta publicación del
-bot. No se eliminan resultados de partidas ni el entorno Python.
+`botv6.py` y `botv6.1.py` no corresponden a ninguna etapa pedida y ya no están en
+el árbol del proyecto: su única copia está en `.local_backup/originales.zip`,
+junto con los archivos sin clasificar que contenían credenciales (por eso ese
+respaldo queda solo en local y fuera de Git).
+
+`versions/chatgpt/v6actualizado/` es la versión en desarrollo que apunta a las
+reglas nuevas del challenge (v4: multiplicador X, v5: muros #, v6: copias de
+dígitos).
+
+Los reportes de la auditoría competitiva del bot R4 se conservan en
+[auditoria_r4/](auditoria_r4/); sus scripts y resultados crudos se descartaron
+porque apuntaban a carpetas que ya no existen.
