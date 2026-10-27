@@ -30,10 +30,39 @@ def _score_view(payload, side):
     return (p1, p2, s1, s2) if BOT_IS_A(side) else (p2, p1, s2, s1)
 
 
-def _update_turn_view(payload):
+HISTORY_LIMIT = 450
+
+
+def _raw_board(payload):
+    """Tablero tal cual lo manda el servidor (con bombas, X, estrellas...)."""
+    rows = str(payload.get("board", "")).strip("\n").split("\n")
+    return [list(row[1:-1]) for row in rows if row]
+
+
+def _pair(payload, key, side):
+    first, second = payload.get(key + "_1", 0), payload.get(key + "_2", 0)
+    return (first, second) if BOT_IS_A(side) else (second, first)
+
+
+def _turn_frame(payload, side, direction):
+    my_mult, enemy_mult = _pair(payload, "multiplier", side)
+    my_inv, enemy_inv = _pair(payload, "invincible", side)
+    return {
+        "board": _raw_board(payload) or BOT_PARSE(payload),
+        "my_score": _pair(payload, "score", side)[0],
+        "enemy_score": _pair(payload, "score", side)[1],
+        "my_mult": my_mult or 1, "enemy_mult": enemy_mult or 1,
+        "my_inv": my_inv, "enemy_inv": enemy_inv,
+        "remaining_moves": payload.get("remaining_moves", 400),
+        "direction": direction,
+    }
+
+
+def _update_turn_view(payload, direction=None):
     game_id = payload.get("game_id", "default")
     side = payload.get("side", "A")
     my_name, enemy_name, my_score, enemy_score = _score_view(payload, side)
+    frame = _turn_frame(payload, side, direction)
     data = {
         "grid": BOT_PARSE(payload),
         "my_side": str(side),
@@ -41,11 +70,14 @@ def _update_turn_view(payload):
         "enemy_name": enemy_name,
         "my_score": my_score,
         "enemy_score": enemy_score,
-        "remaining_moves": payload.get("remaining_moves", 300),
+        "remaining_moves": payload.get("remaining_moves", 400),
         "game_over": False,
         "winner": None,
     }
+    data.update(frame)
     with visual_lock:
+        old = visual_state["games"].get(game_id, {})
+        data["history"] = (old.get("history", []) + [frame])[-HISTORY_LIMIT:]
         visual_state["games"][game_id] = data
 
 
@@ -68,6 +100,8 @@ def _update_game_over(payload):
             game, payload.get("score_1", 0), payload.get("score_2", 0)
         )
         game.update(game_over=True, winner=winner, my_score=mine, enemy_score=enemy)
+        if payload.get("board"):
+            game["board"] = _raw_board(payload)
 
 
 async def _accept_challenge(payload, websocket):
@@ -77,13 +111,14 @@ async def _accept_challenge(payload, websocket):
 
 
 async def _play_turn(payload, websocket):
-    _update_turn_view(payload)
+    direction = BOT_CHOOSE(payload)
+    _update_turn_view(payload, direction)
     action = {
         "action": "move",
         "data": {
             "game_id": payload.get("game_id", "default"),
             "turn_token": payload.get("turn_token"),
-            "direction": BOT_CHOOSE(payload),
+            "direction": direction,
         },
     }
     await websocket.send(json.dumps(action))
@@ -141,7 +176,7 @@ def _start_ws_thread(token):
 def _get_token():
     if len(sys.argv) >= 2:
         return sys.argv[1]
-    raise SystemExit("Uso: python botv7.6_v3.py <TU_TOKEN_JWT>")
+    raise SystemExit("Uso: python bot_3.9.1.py <TU_TOKEN_JWT>")
 
 
 def run_client(choose_direction, parse_turn_board, is_a_side, food_digits):

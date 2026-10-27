@@ -1,5 +1,38 @@
-# SNAKE V8.0 V5 - V7.6 R4 + EXACT FAST BFS/TOPOLOGY
+# SNAKE 3.9.3 (Incremento 3, reglas v9, versión 3)
+# Cambios contra 3.9.2 (partida 9 vs Santino: él llegó a x7 y nosotros a x2):
+#   3. El bot ve las X hasta 40 casillas (antes 8). En la partida 9 las X casi
+#      siempre estaban a más de 8 y el bot ni las miraba.
+#   4. Una X a la que el rival llega apenas antes (hasta 2 pasos) también se pelea.
+#   En el simulador: contra el rival que va a muerte por las X 70% -> 90%,
+#   contra uno tipo Santino 61% -> 78%, y contra la 3.9.2 gana 65%.
+# Cambios de la 3.9.2 contra 3.9.1 (probados en un simulador con las reglas hasta la v9):
+#   1. Carrera por el número que toca: la evaluación resta los puntos que el rival
+#      se va a llevar si llega primero. Así el bot no se come un número cuando eso le
+#      deja al rival el siguiente (que vale más), que es lo que hacían Alejo y Santino.
+#   2. La X vale más: antes un paso de multiplicador valía como mucho 1.200 puntos;
+#      ahora hasta 6.000 al principio de la partida (baja a medida que se acaba).
+#   Nada de la v10 (estrella, 28/10) es nuevo: queda lo que ya traía la 3.9.1.
+# Base: 2.6.1 (antes "V8.1" / v6actualizado) + adaptación a las reglas v7, v8, v9 y v10:
+#   v7: Ⓐ/Ⓑ (comida de cola) dejan de ser pared: se pueden pisar.
+#   v8: las casillas al alcance de una bomba (💣 a 2 o menos, 🧨 a 1 o menos,
+#       diagonales incluidas) se tratan como muro: pisarlas te deja en 0.
+#   v9: las * de los disparos no hacen que el bot se olvide de los dígitos.
+#   v10: con invencibilidad la cabeza viene en minúscula; se normaliza. ⭐ se puede pisar.
+#
+# Historia anterior (2.6.1 = V8.0 + reglas v4 (X multiplicador), v5 (# muro) y v6 (copias de dígitos))
 # Based on V7.5 methodology fixes. V3 rules added without removing tactical safety layers.
+#
+# Cambios V8.1 (todos son no-op en tableros v1-v3, sin X / # / copias):
+#   v4: la celda X ya no se trata como obstáculo; se puede comer (+50) y el
+#       multiplicador (multiplier_1/2) se lee del turno y se simula en la búsqueda.
+#   v5: el muro # sigue siendo "no transitable", pero si no queda ningún otro
+#       movimiento se prefiere chocar el # (-500, seguimos vivos) antes que morir.
+#   v6: el objetivo ahora son TODAS las copias del dígito correcto (antes solo una,
+#       y las demás copias se trataban como dígito equivocado). Al comer una copia
+#       el simulador borra las otras, y la carrera por comida usa la copia más cercana.
+#   Evaluación: el "bolsillo" (encierro) ya no borra el puntaje (con multiplicadores
+#       encerrarse llegaba a parecer mejor que un estado normal), y las X cercanas
+#       que ganamos en carrera suman valor aunque estén fuera del horizonte de búsqueda.
 import sys
 import time
 from collections import deque
@@ -136,6 +169,38 @@ AC_REPEAT_PENALTY = 3500
 AC_SHORT_PERIOD_BONUS = 1200
 AC_PENALTY_CAP = 30000
 
+# V8.1 / regla v4: pickups X y multiplicador de puntos de comida.
+X_PICKUP_POINTS = 50          # +50 plano, no se multiplica
+X_TURNS_PER_FOOD = 18         # estimación: turnos propios por cada comida comida
+X_AVG_FOOD_POINTS = 500       # dígito promedio (5) * 100
+X_FUTURE_DISCOUNT = 0.8       # 3.9.2: antes 0.35; la X vale mucho más (los rivales ganan por multiplicador)
+X_VIRTUAL_CAP = 6000          # 3.9.2: antes 1200
+X_MIN_REMAINING = 12          # al final el multiplicador ya no rinde
+X_POTENTIAL_RADIUS = 40       # 3.9.3: antes 8; en la partida 9 las X estaban a 10-25 casillas y el bot no las veía
+X_POTENTIAL_DECAY = 0.93      # 3.9.3: más suave para que una X lejana siga tirando
+X_CONTEST_SLACK = 2           # 3.9.3: una X a la que el rival llega apenas antes también se pelea
+X_CONTEST_FACTOR = 0.5
+X_ORDERING_PRIORITY = 8000
+
+# 3.9.2: carrera por el número que toca, en puntos esperados.
+# Antes la evaluación casi no veía quién se iba a comer el próximo número; por eso
+# el bot se comía el que tocaba aunque el rival estuviera parado al lado del siguiente
+# (que vale más) y se lo regalaba.
+RACE_ENABLED = True
+RACE_P_BASE = 0.45        # probabilidad base de ganar una carrera pareja
+RACE_P_PER_STEP = 0.10    # cada paso de ventaja suma esto
+RACE_P_MAX = 0.85
+RACE_WEIGHT = 1.0
+RACE_CLAIM_WEIGHT = 0.0   # lo que vale 'ir ganando' una carrera sin haber comido
+RACE_MIN_REMAINING = 6
+# 3.9.2: si el rival gana la carrera del número que toca, me paro cerca de una copia
+# del número que viene que quede lejos de donde él va a comer (lo que hacen Alejo y Santino).
+CAMP_ENABLED = False      # probado: por ahora no mejora; queda apagado
+CAMP_WEIGHT = 0.8
+CAMP_P_BASE = 0.5
+CAMP_P_PER_STEP = 0.1
+DIGIT_CELLS = {}  # posiciones de cada dígito al inicio del turno (se recalcula en la raíz)
+
 # Flags para la Transposition Table (Alpha-Beta exacto)
 TT_EXACT = 0
 TT_LOWER = 1
@@ -149,6 +214,8 @@ DIRECTIONS = {
 }
 
 FOOD_DIGITS = frozenset("123456789")
+X_PICKUP = "X"   # regla v4 (16 Sep 2026)
+WALL_CHAR = "#"  # regla v5 (23 Sep 2026)
 
 
 def is_a_side(side):
@@ -161,8 +228,12 @@ def is_food_symbol(cell):
 
 
 def is_open_cell(cell):
-    """Cells that can be entered without colliding. Wrong digits are legal but costly."""
-    return cell == " " or is_food_symbol(cell)
+    """Cells that can be entered without colliding. Wrong digits are legal but costly.
+
+    v4: X es una celda comible (+50 y multiplicador), no un obstáculo.
+    v5: # NO es abierta (cuesta -500 y no avanzamos).
+    """
+    return cell == " " or cell == X_PICKUP or is_food_symbol(cell)
 
 # Historiales exactos por partida / estado de búsqueda.
 bot_histories = {}
@@ -174,6 +245,35 @@ SEARCH_MODE = "time"
 LAST_FE_STATS = {}
 LAST_AC_STATS = {}
 LAST_STRATEGY_STATS = {}
+
+# v4: multiplicador por jugador, clave = is_player_a (True -> jugador A / _1).
+# Se carga del turno y la simulación lo sube/baja al comer/descomer una X.
+MULTIPLIERS = {True: 1, False: 1}
+
+
+def _safe_multiplier(value):
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return 1
+
+
+def load_multipliers(game_data):
+    MULTIPLIERS[True] = _safe_multiplier(game_data.get("multiplier_1", 1))
+    MULTIPLIERS[False] = _safe_multiplier(game_data.get("multiplier_2", 1))
+
+
+def _multiplier_for(is_player_a):
+    return MULTIPLIERS.get(bool(is_player_a), 1)
+
+
+def multiplier_future_value(remaining):
+    """Puntos virtuales estimados de +1 paso de multiplicador con `remaining` jugadas."""
+    if remaining <= X_MIN_REMAINING:
+        return 0
+    my_turns = remaining // 2
+    value = my_turns / X_TURNS_PER_FOOD * X_AVG_FOOD_POINTS * X_FUTURE_DISCOUNT
+    return int(min(X_VIRTUAL_CAP, value))
 
 # =====================================================================
 # PARSEO / MOTOR ESTRATÉGICO
@@ -192,6 +292,7 @@ def _board_lines(board_str):
 
 
 def _parse_board_str(board_str):
+    board_str = board_str.replace("\ufe0f", "")  # v8/v10: emojis sin selector de variante
     return [list(_strip_board_frame(line)) for line in _board_lines(board_str)]
 
 def parse_board(board_raw):
@@ -241,6 +342,60 @@ def parse_turn_board(game_data):
             }
     return grid
 
+# =====================================================================
+# REGLAS v7-v10: se traducen al vocabulario que ya entiende el motor
+# =====================================================================
+BOMB_RADIUS = {"\U0001F4A3": 2, "\U0001F9E8": 1}  # 💣 zona 5x5, 🧨 zona 3x3
+TAIL_FOOD = frozenset("\u24B6\u24B7")             # Ⓐ Ⓑ
+STAR = "\u2B50"                                    # ⭐
+SNAKE_CELLS = frozenset("AaBb")
+KNOWN_CELLS = frozenset(" #*X") | FOOD_DIGITS | SNAKE_CELLS
+
+
+def _normalize_invincible(grid, game_data):
+    """v10: una serpiente invencible se dibuja con cabeza minúscula y cuerpo mayúscula."""
+    for letter, key in (("A", "invincible_1"), ("B", "invincible_2")):
+        if not game_data.get(key):
+            continue
+        low = letter.lower()
+        swap = {letter: low, low: letter}
+        for row in grid:
+            for c, cell in enumerate(row):
+                if cell in swap:
+                    row[c] = swap[cell]
+
+
+def _bomb_zone_cells(grid):
+    rows, cols = len(grid), len(grid[0]) if grid else 0
+    zone = set()
+    for r, row in enumerate(grid):
+        for c, cell in enumerate(row):
+            radius = BOMB_RADIUS.get(cell)
+            if radius is None:
+                continue
+            for rr in range(max(0, r - radius), min(rows, r + radius + 1)):
+                for cc in range(max(0, c - radius), min(cols, c + radius + 1)):
+                    zone.add((rr, cc))
+    return zone
+
+
+def adapt_new_rules(grid, game_data):
+    """Reescribe en el lugar las celdas de reglas v7-v10 para el motor v6."""
+    _normalize_invincible(grid, game_data)
+    digits_present = numbered_food_mode(grid)
+    for r, c in _bomb_zone_cells(grid):
+        if grid[r][c] not in SNAKE_CELLS:
+            grid[r][c] = WALL_CHAR
+    for row in grid:
+        for c, cell in enumerate(row):
+            if cell in TAIL_FOOD or cell == STAR:
+                row[c] = " "
+            elif cell == "*" and digits_present:
+                row[c] = " "
+            elif cell not in KNOWN_CELLS:
+                row[c] = WALL_CHAR  # símbolo desconocido: mejor no pisarlo
+    return grid
+
 def _find_cell_with_targets(grid, targets):
     for r, row in enumerate(grid):
         for c, val in enumerate(row):
@@ -259,8 +414,18 @@ def _cyclic_predecessor_digit(digit):
     value = int(digit)
     return str(9 if value == 1 else value - 1)
 
+def _numbered_food_positions(grid):
+    """v6: {dígito: [todas sus copias en orden de lectura]}."""
+    cells = {}
+    for r, row in enumerate(grid):
+        for c, val in enumerate(row):
+            if val in FOOD_DIGITS:
+                cells.setdefault(val, []).append((r, c))
+    return cells
+
 def _numbered_food_cells(grid):
-    return {val: (r, c) for r, row in enumerate(grid) for c, val in enumerate(row) if val in FOOD_DIGITS}
+    """Compatibilidad: una posición por dígito (la primera copia)."""
+    return {digit: positions[0] for digit, positions in _numbered_food_positions(grid).items()}
 
 def _forward_food_run_length(start, present):
     current = int(start)
@@ -277,18 +442,29 @@ def _fallback_food_digit(present):
     return max(ordered, key=key)
 
 
-def correct_numbered_food(grid):
-    """Return (digit, position) for the next legal v3 digit, or (None, None)."""
-    cells = _numbered_food_cells(grid)
-    if not cells:
-        return None, None
-    present = set(cells)
+def _target_digit(present):
     candidates = [
         digit for digit in present
         if _cyclic_predecessor_digit(digit) not in present
     ]
-    digit = candidates[0] if len(candidates) == 1 else _fallback_food_digit(present)
-    return digit, cells[digit]
+    return candidates[0] if len(candidates) == 1 else _fallback_food_digit(present)
+
+
+def correct_numbered_food_positions(grid):
+    """Return (digit, [todas las copias]) del dígito correcto, o (None, [])."""
+    cells = _numbered_food_positions(grid)
+    if not cells:
+        return None, []
+    digit = _target_digit(set(cells))
+    return digit, list(cells[digit])
+
+
+def correct_numbered_food(grid):
+    """Return (digit, position) for the next legal v3 digit, or (None, None)."""
+    digit, positions = correct_numbered_food_positions(grid)
+    if digit is None:
+        return None, None
+    return digit, positions[0]
 
 def _legacy_food_cells(grid):
     return [
@@ -300,12 +476,12 @@ def _legacy_food_cells(grid):
 
 
 def find_food(grid):
-    """Strategic food targets: all legacy apples, or only the correct v3 digit."""
+    """Strategic food targets: all legacy apples, or ALL copies of the correct digit (v6)."""
     stars = _legacy_food_cells(grid)
     if stars:
         return stars
-    _, pos = correct_numbered_food(grid)
-    return [] if pos is None else [pos]
+    _, positions = correct_numbered_food_positions(grid)
+    return positions
 
 def current_food_reward(grid, food_list=None):
     targets = food_list if food_list is not None else find_food(grid)
@@ -328,6 +504,33 @@ def is_pos_inside(grid, pos):
     if not grid or not pos:
         return False
     return 0 <= pos[0] < len(grid) and 0 <= pos[1] < len(grid[0])
+
+
+def target_copies_mode(grid, food_list):
+    """v6: True si food_list son varias copias del MISMO dígito objetivo.
+
+    En ese caso la carrera se decide por la copia más cercana de cada jugador:
+    si el rival come cualquier copia, desaparecen todas.
+    """
+    if not food_list or len(food_list) < 2:
+        return False
+    pos = food_list[0]
+    return is_pos_inside(grid, pos) and grid[pos[0]][pos[1]] in FOOD_DIGITS
+
+
+def _min_food_distance(distances, food_list):
+    return min((distances.get(food, INF) for food in food_list), default=INF)
+
+
+def _effective_enemy_food_distances(distances, food_list, collapse):
+    """Con copias, la distancia del rival a CADA copia es su distancia a la más cercana."""
+    if not collapse:
+        return distances
+    effective = dict(distances)
+    best = _min_food_distance(distances, food_list)
+    for food in food_list:
+        effective[food] = best
+    return effective
 
 # =====================================================================
 # 4. RASTREO ROBUSTO DE CUERPOS (StateTracker)
@@ -490,6 +693,7 @@ def _fast_bfs_distances(grid, start_pos, tail_pos=None):
     Conserva el mismo contrato de salida (dict {(r,c): distancia}) que el v4,
     pero evita la mayor parte de las tuplas, búsquedas en dict y llamadas de
     helpers dentro del recorrido caliente.
+    (V8.1: X cuenta como celda abierta, igual que is_open_cell.)
     """
     if not _valid_bfs_start(grid, start_pos):
         return {}
@@ -528,7 +732,7 @@ def _fast_bfs_distances(grid, start_pos, tail_pos=None):
             nidx = idx - cols
             if dist[nidx] < 0:
                 cell = grid[r - 1][c]
-                if cell == " " or cell == "*" or cell in FOOD_DIGITS or nidx == tail_idx:
+                if cell == " " or cell == "*" or cell == "X" or cell in FOOD_DIGITS or nidx == tail_idx:
                     dist[nidx] = next_dist
                     queue[q_tail] = nidx
                     visited[visited_count] = nidx
@@ -539,7 +743,7 @@ def _fast_bfs_distances(grid, start_pos, tail_pos=None):
             nidx = idx + cols
             if dist[nidx] < 0:
                 cell = grid[r + 1][c]
-                if cell == " " or cell == "*" or cell in FOOD_DIGITS or nidx == tail_idx:
+                if cell == " " or cell == "*" or cell == "X" or cell in FOOD_DIGITS or nidx == tail_idx:
                     dist[nidx] = next_dist
                     queue[q_tail] = nidx
                     visited[visited_count] = nidx
@@ -550,7 +754,7 @@ def _fast_bfs_distances(grid, start_pos, tail_pos=None):
             nidx = idx - 1
             if dist[nidx] < 0:
                 cell = grid[r][c - 1]
-                if cell == " " or cell == "*" or cell in FOOD_DIGITS or nidx == tail_idx:
+                if cell == " " or cell == "*" or cell == "X" or cell in FOOD_DIGITS or nidx == tail_idx:
                     dist[nidx] = next_dist
                     queue[q_tail] = nidx
                     visited[visited_count] = nidx
@@ -561,7 +765,7 @@ def _fast_bfs_distances(grid, start_pos, tail_pos=None):
             nidx = idx + 1
             if dist[nidx] < 0:
                 cell = grid[r][c + 1]
-                if cell == " " or cell == "*" or cell in FOOD_DIGITS or nidx == tail_idx:
+                if cell == " " or cell == "*" or cell == "X" or cell in FOOD_DIGITS or nidx == tail_idx:
                     dist[nidx] = next_dist
                     queue[q_tail] = nidx
                     visited[visited_count] = nidx
@@ -765,13 +969,15 @@ def _demote_old_head(grid, body, body_char):
         grid[old_head[0]][old_head[1]] = body_char
 
 
-def _score_move_result(current_score, target_char, legacy, correct, wrong):
+def _score_move_result(current_score, target_char, legacy, correct, wrong, multiplier=1):
     if legacy:
-        return current_score + 100
+        return current_score + 100 * multiplier
     if correct:
-        return current_score + int(target_char) * 100
+        return current_score + int(target_char) * 100 * multiplier
     if wrong:
         return current_score - 500
+    if target_char == X_PICKUP:
+        return current_score + X_PICKUP_POINTS
     return current_score + 1
 
 
@@ -780,8 +986,31 @@ def _refresh_food_after_move(grid, food_list, legacy, correct):
         food_list[:] = find_food(grid)
 
 
+def _consume_target_copies(grid, target_positions, eaten_pos, digit_char):
+    """v6: comer el dígito objetivo elimina todas sus demás copias."""
+    for pos in target_positions:
+        if pos != eaten_pos and grid[pos[0]][pos[1]] == digit_char:
+            grid[pos[0]][pos[1]] = " "
+
+
+def _restore_target_copies(grid, food_undo, eaten_pos, digit_char, eaten_food):
+    if not eaten_food or digit_char not in FOOD_DIGITS:
+        return
+    if not isinstance(food_undo, (tuple, list)):
+        return
+    for pos in food_undo:
+        if pos != eaten_pos and grid[pos[0]][pos[1]] == " ":
+            grid[pos[0]][pos[1]] = digit_char
+
+
+def _bump_multiplier(target_char, is_player_a, step):
+    if target_char == X_PICKUP:
+        key = bool(is_player_a)
+        MULTIPLIERS[key] = MULTIPLIERS.get(key, 1) + step
+
+
 def make_move(grid, body, next_pos, is_player_a, current_score, food_list):
-    """Apply one simulated move for legacy * and v3 numbered food."""
+    """Apply one simulated move for legacy *, v3/v6 numbered food and v4 X."""
     head_char = "A" if is_player_a else "B"
     body_char = "a" if is_player_a else "b"
     prev_target_char = grid[next_pos[0]][next_pos[1]]
@@ -790,13 +1019,17 @@ def make_move(grid, body, next_pos, is_player_a, current_score, food_list):
     )
     grows = legacy or correct
     food_undo = tuple(food_list)
+    multiplier = _multiplier_for(is_player_a)
     tail_pos, prev_tail_char = _remove_tail_for_move(grid, body, grows)
     _demote_old_head(grid, body, body_char)
     grid[next_pos[0]][next_pos[1]] = head_char
     body.appendleft(next_pos)
     current_score = _score_move_result(
-        current_score, prev_target_char, legacy, correct, wrong
+        current_score, prev_target_char, legacy, correct, wrong, multiplier
     )
+    if correct:
+        _consume_target_copies(grid, food_undo, next_pos, prev_target_char)
+    _bump_multiplier(prev_target_char, is_player_a, 1)
     _refresh_food_after_move(grid, food_list, legacy, correct)
     return (
         tail_pos, prev_tail_char, prev_target_char,
@@ -832,6 +1065,8 @@ def unmake_move(grid, body, tail_pos, prev_tail_char, prev_target_char,
     _restore_old_head(grid, body, prev_target_char)
     _restore_new_head(grid, body, head_char)
     _restore_tail(grid, body, tail_pos, prev_tail_char, eaten_food)
+    _restore_target_copies(grid, food_undo, next_pos, prev_target_char, eaten_food)
+    _bump_multiplier(prev_target_char, is_player_a, -1)
     _restore_food_snapshot(food_list, food_undo)
 
 # =====================================================================
@@ -1108,11 +1343,24 @@ def _weighted_top_two(values):
     return total
 
 
-def compute_food_race_bonus(my_topo, en_topo, food_list, reward_scale=1):
-    """Valor focal de carrera por comida sin BFS adicionales."""
+def compute_food_race_bonus(my_topo, en_topo, food_list, reward_scale=1, collapse=False):
+    """Valor focal de carrera por comida sin BFS adicionales.
+
+    collapse=True (v6, copias del mismo dígito): una sola carrera entre la copia
+    más cercana para nosotros y la más cercana para el rival.
+    """
     if not food_list:
         return 0
     reward_scale = max(1, min(9, int(reward_scale)))
+    scaled_cap = FOOD_RACE_CAP * reward_scale
+    if collapse:
+        side, value = _food_race_side(
+            _min_food_distance(my_topo.distances, food_list),
+            _min_food_distance(en_topo.distances, food_list),
+            reward_scale
+        )
+        signed = value if side == 'claim' else (-value if side == 'threat' else 0)
+        return max(-scaled_cap, min(scaled_cap, signed))
     claims, threats = [], []
     for food in food_list:
         side, value = _food_race_side(
@@ -1126,7 +1374,6 @@ def compute_food_race_bonus(my_topo, en_topo, food_list, reward_scale=1):
     threats.sort(reverse=True)
     positive = _weighted_top_two(claims)
     negative = _weighted_top_two(threats)
-    scaled_cap = FOOD_RACE_CAP * reward_scale
     return max(-scaled_cap, min(scaled_cap, positive - negative))
 
 def _turns_left(remaining, my_to_move):
@@ -1362,12 +1609,26 @@ def _new_freeze_stats(penalties):
     }
 
 
+def _enemy_topology_for_targets(grid, en_body, food_list, collapse):
+    """v6: con copias, el rival 'llega' a todas las copias cuando llega a la más cercana."""
+    topo = _topology_for_body_or_empty(grid, en_body)
+    if not collapse:
+        return topo
+    return TopologyInfo(
+        topo.space, topo.exits, topo.tail_reachable, topo.pocket_trap,
+        _effective_enemy_food_distances(topo.distances, food_list, True)
+    )
+
+
 def _freeze_context_or_none(grid, my_body, en_body, food_list, candidates,
                             strategy, fe_penalties, forced_trap_penalties, penalties):
     if not food_list or not my_body:
         return None
     remaining = strategy.get("remaining", 999)
-    if not _bank_layer_may_run(strategy, remaining, len(food_list)):
+    collapse = target_copies_mode(grid, food_list)
+    # Varias copias del mismo dígito siguen siendo UNA sola comida estratégica.
+    food_count = 1 if collapse else len(food_list)
+    if not _bank_layer_may_run(strategy, remaining, food_count):
         return None
     food_set = set(food_list)
     safe_non_food = _safe_non_food_names(
@@ -1379,8 +1640,9 @@ def _freeze_context_or_none(grid, my_body, en_body, food_list, candidates,
         "remaining": remaining, "food_set": food_set,
         "safe_non_food": safe_non_food,
         "my_topo": _topology_for_body_or_empty(grid, my_body),
-        "en_topo": _topology_for_body_or_empty(grid, en_body),
+        "en_topo": _enemy_topology_for_targets(grid, en_body, food_list, collapse),
         "penalties": penalties,
+        "food_count": food_count,
     }
 
 
@@ -1403,7 +1665,7 @@ def _try_deferred_catchup_bank(grid, food_list, candidates, strategy, ctx, stats
 
 
 def _apply_historical_lock_freeze(food_list, candidates, strategy, ctx, stats):
-    if _apple_freeze_inactive(strategy, ctx["remaining"], len(food_list)):
+    if _apple_freeze_inactive(strategy, ctx["remaining"], ctx["food_count"]):
         return
     bankable, enemy_urgent = _classify_freeze_food(
         food_list, ctx["my_topo"], ctx["en_topo"]
@@ -1537,6 +1799,14 @@ def _pocket_terminal_value(my_topo, en_topo):
     return None
 
 
+POCKET_EVAL_SCALE = 400  # 500000 * 400 = 200M: debajo de TERMINAL_WIN_SCORE (900M)
+
+
+def _pocket_scaled_value(pocket):
+    """Conserva el orden original (-500000 + espacio*100) pero a escala de ±200M."""
+    return pocket * POCKET_EVAL_SCALE
+
+
 def _choke_bonus(grid, my_head, en_head, my_topo, en_topo):
     can_cut, door_pos, _ = analyze_corridor_chokepoints_opt(
         grid, my_head, en_head, en_topo, my_topo
@@ -1561,7 +1831,15 @@ def _food_distance_contribution(my_distance, enemy_distance):
     return 0
 
 
-def _food_tempo(my_topo, en_topo, food_list):
+def _food_tempo(my_topo, en_topo, food_list, collapse=False):
+    if collapse:
+        # v6: una sola carrera por el dígito objetivo (copia más cercana de cada uno).
+        my_distance = _min_food_distance(my_topo.distances, food_list)
+        enemy_distance = _min_food_distance(en_topo.distances, food_list)
+        score = _food_distance_contribution(my_distance, enemy_distance)
+        if my_distance != INF:
+            score += 200 - my_distance * 10
+        return score, my_distance
     score = 0
     min_my_distance = INF
     for food in food_list:
@@ -1572,6 +1850,60 @@ def _food_tempo(my_topo, en_topo, food_list):
     if min_my_distance != INF:
         score += 200 - min_my_distance * 10
     return score, min_my_distance
+
+
+def _x_pickup_positions(grid):
+    return [
+        (r, c)
+        for r, row in enumerate(grid) if X_PICKUP in row
+        for c, value in enumerate(row) if value == X_PICKUP
+    ]
+
+
+def _x_potential(distance, x_value, score_weight):
+    """Valor parcial de una X que ganamos la carrera, decreciente con la distancia.
+
+    Evita el efecto horizonte: sin esto, una X a 5 pasos 'no existe' para la búsqueda
+    y el bot pagaba -500 (dígito equivocado) para llegar a ella en 3 pasos.
+    Siempre < x_value completo, así que comerla sigue siendo mejor que rondarla.
+    """
+    if distance > X_POTENTIAL_RADIUS:
+        return 0
+    return int(x_value * score_weight * (X_POTENTIAL_DECAY ** distance))
+
+
+def _x_pickup_tempo(grid, my_topo, en_topo, x_value, score_weight=500):
+    """v4: valor de las X que alcanzamos primero menos las que alcanza primero el rival."""
+    if x_value <= 0:
+        return 0
+    mine = 0
+    theirs = 0
+    for pos in _x_pickup_positions(grid):
+        my_value, enemy_value = _x_race_values(
+            my_topo.distances.get(pos, INF), en_topo.distances.get(pos, INF),
+            x_value, score_weight
+        )
+        mine = max(mine, my_value)
+        theirs = max(theirs, enemy_value)
+    return mine - theirs
+
+
+def _x_race_values(my_distance, enemy_distance, x_value, score_weight):
+    """(lo que vale para mí, lo que vale para el rival) una X según quién llega antes."""
+    if my_distance < enemy_distance:
+        return _x_potential(my_distance, x_value, score_weight), 0
+    if enemy_distance == my_distance:
+        return 0, 0
+    theirs = _x_potential(enemy_distance, x_value, score_weight)
+    if my_distance > enemy_distance + X_CONTEST_SLACK:
+        return 0, theirs
+    # 3.9.3: si el rival llega apenas antes, la X igual se pelea (vale la mitad)
+    return int(_x_potential(my_distance, x_value, score_weight) * X_CONTEST_FACTOR), theirs
+
+
+def _body_is_player_a(grid, body):
+    head = body[0]
+    return grid[head[0]][head[1]] == "A"
 
 
 def _territory_cell_owner(grid, pos, my_topo, en_topo):
@@ -1641,6 +1973,69 @@ def _combine_evaluation(remaining, score_diff, base_score, food_tempo_score,
     )
 
 
+def _race_winner_probability(my_distance, enemy_distance, my_to_move):
+    """(yo_gano, probabilidad) de la carrera por el número que toca."""
+    i_win = my_distance < enemy_distance or (my_distance == enemy_distance and my_to_move)
+    margin = abs(enemy_distance - my_distance)
+    prob = min(RACE_P_MAX, RACE_P_BASE + RACE_P_PER_STEP * margin)
+    return i_win, prob
+
+
+def _race_expected_points(grid, my_topo, en_topo, food_list, my_mult, en_mult,
+                          remaining, my_to_move):
+    """Puntos esperados del número que toca: + si lo gano yo, - si lo gana el rival."""
+    if not RACE_ENABLED or not food_list or remaining < RACE_MIN_REMAINING:
+        return 0
+    my_distance = _min_food_distance(my_topo.distances, food_list)
+    enemy_distance = _min_food_distance(en_topo.distances, food_list)
+    if my_distance == INF and enemy_distance == INF:
+        return 0
+    reward = current_food_reward(grid, food_list)
+    i_win, prob = _race_winner_probability(
+        min(my_distance, 99), min(enemy_distance, 99), my_to_move
+    )
+    if i_win and 2 * my_distance <= remaining:
+        return int(RACE_WEIGHT * RACE_CLAIM_WEIGHT * prob * reward * my_mult)
+    if not i_win and 2 * enemy_distance <= remaining:
+        threat = -int(RACE_WEIGHT * prob * reward * en_mult)
+        camp = _camp_expected_points(
+            grid, my_topo, en_topo, food_list, reward, my_mult, enemy_distance, remaining
+        )
+        # esperar nunca puede valer más que ganar la carrera (si no, el bot se la regala)
+        return min(0, threat + camp)
+    return 0
+
+
+def _next_digit_cells(grid, digit):
+    return [
+        pos for pos in DIGIT_CELLS.get(digit, ())
+        if grid[pos[0]][pos[1]] == digit
+    ]
+
+
+def _camp_expected_points(grid, my_topo, en_topo, food_list, reward, my_mult,
+                          enemy_distance, remaining):
+    """Valor de esperar cerca del número que viene mientras el rival come el actual."""
+    if not CAMP_ENABLED or reward <= 0:
+        return 0
+    enemy_spot = min(food_list, key=lambda pos: en_topo.distances.get(pos, INF))
+    next_digit = str(reward // 100 % 9 + 1)
+    best = None
+    for pos in _next_digit_cells(grid, next_digit):
+        my_distance = my_topo.distances.get(pos, INF)
+        if my_distance == INF:
+            continue
+        enemy_after = abs(pos[0] - enemy_spot[0]) + abs(pos[1] - enemy_spot[1])
+        my_after = max(1, my_distance - enemy_distance)
+        advantage = enemy_after - my_after
+        if advantage > 0 and (best is None or advantage > best):
+            best = advantage
+    if best is None or 2 * (enemy_distance + 1) > remaining:
+        return 0
+    prob = min(RACE_P_MAX, CAMP_P_BASE + CAMP_P_PER_STEP * best)
+    return int(CAMP_WEIGHT * prob * (int(next_digit) * 100) * my_mult)
+
+
 def evaluate_state_v5(grid, my_body, en_body, my_score, en_score, remaining,
                       food_list, my_to_move=True):
     my_head, en_head = _evaluation_heads(my_body, en_body)
@@ -1650,37 +2045,51 @@ def evaluate_state_v5(grid, my_body, en_body, my_score, en_score, remaining,
     my_topo, en_topo = _evaluation_topologies(
         grid, my_body, en_body, my_head, en_head
     )
+    score_diff = my_score - en_score
+    my_is_a = _body_is_player_a(grid, my_body)
+    my_mult = _multiplier_for(my_is_a)
+    en_mult = _multiplier_for(not my_is_a)
+    score_weight = 500 if remaining > 100 else 2500
+    # v4: cada paso de multiplicador de ventaja vale puntos futuros estimados.
+    x_value = multiplier_future_value(remaining)
+    race = _race_expected_points(
+        grid, my_topo, en_topo, food_list, my_mult, en_mult, remaining, my_to_move
+    )
+    base_score = (score_diff + (my_mult - en_mult) * x_value + race) * score_weight
+
     pocket = _pocket_terminal_value(my_topo, en_topo)
     if pocket is not None:
-        return pocket
+        # V8.1: antes devolvía ±500000 SIN el puntaje. Con multiplicadores (v4) el
+        # puntaje llega a millones y encerrarse parecía mejor que un estado normal.
+        # Ahora el bolsillo domina (±200M) pero conserva el puntaje como desempate.
+        return _pocket_scaled_value(pocket) + base_score
 
     choke_bonus = _choke_bonus(grid, my_head, en_head, my_topo, en_topo)
-    score_diff = my_score - en_score
-    food_reward = current_food_reward(grid, food_list)
+    food_reward = current_food_reward(grid, food_list) * my_mult
     strategy = compute_strategy_state(
         my_score, en_score, remaining,
         my_to_move=my_to_move, food_reward=food_reward
     )
-    score_weight = 500 if remaining > 100 else 2500
-    base_score = score_diff * score_weight
+    collapse = target_copies_mode(grid, food_list)
     food_tempo_score, min_my_food_dist = _food_tempo(
-        my_topo, en_topo, food_list
+        my_topo, en_topo, food_list, collapse
     )
     food_scale = max(1, min(9, food_reward // 100))
     food_tempo_score *= food_scale
     food_race_bonus = compute_food_race_bonus(
-        my_topo, en_topo, food_list, reward_scale=food_scale
+        my_topo, en_topo, food_list, reward_scale=food_scale, collapse=collapse
     )
     territory_bonus = _territory_eval_bonus(
         grid, my_body, en_body, my_topo, en_topo, score_diff,
         remaining, food_race_bonus, min_my_food_dist, strategy
     )
     mobility_score = my_topo.exits * 120 + min(my_topo.space, 40) * 8
-    return _combine_evaluation(
+    value = _combine_evaluation(
         remaining, score_diff, base_score, food_tempo_score,
         food_race_bonus, territory_bonus, mobility_score, choke_bonus,
         my_topo
     )
+    return value + _x_pickup_tempo(grid, my_topo, en_topo, x_value, score_weight)
 
 # =====================================================================
 # 8. BÚSQUEDA ALPHA-BETA CON TRANSPOSITION TABLE EXACTA
@@ -1722,6 +2131,8 @@ def _move_priority_score(grid, npos, food_list, min_cur_food, can_cut, door_pos)
         return food
     if wrong_numbered_food_at(grid, npos, food_list):
         return -250000
+    if grid[npos[0]][npos[1]] == X_PICKUP:
+        return X_ORDERING_PRIORITY
     closer = _food_manhattan_distance(npos, food_list) < min_cur_food
     return 5000 if closer else 0
 
@@ -1781,10 +2192,13 @@ def _exact_terminal_result(my_body, en_body, my_score, en_score, remaining):
 
 def _search_state_hash(my_body, en_body, is_my_turn, food_list,
                        remaining, my_is_a, my_score, en_score):
-    return hash((
+    base = (
         tuple(my_body), tuple(en_body), is_my_turn,
-        tuple(sorted(food_list)), remaining, my_is_a, my_score, en_score
-    ))
+        tuple(sorted(food_list)), remaining, my_is_a, my_score, en_score,
+    )
+    mults = (MULTIPLIERS[True], MULTIPLIERS[False])
+    # Sin multiplicadores la clave queda igual que en V8.0 (la usa la auditoría histórica).
+    return hash(base if mults == (1, 1) else base + mults)
 
 
 def _tt_cutoff_score(entry, alpha, beta):
@@ -1997,6 +2411,15 @@ def _fallback_candidate_legal(grid, npos, my_body):
     return is_open_cell(grid[npos[0]][npos[1]]) or npos == my_body[-1]
 
 
+def _wall_bump_direction(grid, head):
+    """v5: chocar un # cuesta -500 pero NO mata; mejor que un choque letal."""
+    for name, delta in DIRECTIONS.items():
+        npos = _fallback_position(head, delta)
+        if is_pos_inside(grid, npos) and grid[npos[0]][npos[1]] == WALL_CHAR:
+            return name
+    return None
+
+
 def emergency_safety_fallback(grid, my_body, en_body, food_list):
     if not my_body:
         return "UP"
@@ -2008,6 +2431,10 @@ def emergency_safety_fallback(grid, my_body, en_body, food_list):
         score = _fallback_candidate_score(grid, npos, my_body, food_list)
         if score > max_score:
             best_dir, max_score = name, score
+    if max_score == -INF:
+        wall_dir = _wall_bump_direction(grid, my_body[0])
+        if wall_dir is not None:
+            return wall_dir
     return best_dir
 
 def _anti_cycle_recent(history):
@@ -2614,7 +3041,8 @@ def _straight_food_value(grid, pos, dist):
 def _straight_cell_blocked(grid, pos):
     if not is_pos_inside(grid, pos):
         return True
-    return grid[pos[0]][pos[1]] != ' '
+    # v4: pasar por una X en el camino es gratis (incluso suma), no bloquea.
+    return grid[pos[0]][pos[1]] not in (' ', X_PICKUP)
 
 
 def _walk_straight_food(grid, start, food, dr, dc, dist):
@@ -2703,7 +3131,10 @@ def _food_candidate_is_better(candidate, best):
 
 
 def _best_safe_food_after_root(grid, my_head, en_body, food_list):
-    enemy_distances = _enemy_food_distances(grid, en_body)
+    enemy_distances = _effective_enemy_food_distances(
+        _enemy_food_distances(grid, en_body), food_list,
+        target_copies_mode(grid, food_list)
+    )
     best = None
     for food in food_list:
         candidate = _safe_food_tuple(grid, my_head, food, enemy_distances)
@@ -2819,7 +3250,8 @@ def _enemy_head_from_body(en_body):
 
 def _build_turn_context(game_data, use_ac):
     global LAST_STRATEGY_STATS
-    grid = parse_turn_board(game_data)
+    load_multipliers(game_data)
+    grid = adapt_new_rules(parse_turn_board(game_data), game_data)
     side = game_data.get("side", "A")
     game_id = game_data.get("game_id", "default")
     my_body, en_body = get_bodies(game_id, grid, side)
@@ -2830,7 +3262,9 @@ def _build_turn_context(game_data, use_ac):
     my_score, en_score = _scores_for_side(game_data, my_is_a)
     remaining = game_data.get("remaining_moves", 300)
     food_list = find_food(grid)
-    food_reward = current_food_reward(grid, food_list)
+    DIGIT_CELLS.clear()
+    DIGIT_CELLS.update(_numbered_food_positions(grid))
+    food_reward = current_food_reward(grid, food_list) * _multiplier_for(my_is_a)
     strategy = compute_strategy_state(
         my_score, en_score, remaining, my_to_move=True, food_reward=food_reward
     )
@@ -2963,6 +3397,10 @@ def _record_root_stats(ctx, freeze_stats, strategy_adjustments, forced_stats,
         "tactical": tactical_stats,
         "safe_food_adjustments": dict(safe_adjustments),
         "safe_food_details": safe_details,
+        "multipliers": {
+            "mine": _multiplier_for(ctx["my_is_a"]),
+            "enemy": _multiplier_for(not ctx["my_is_a"]),
+        },
     })
 
 
