@@ -1,0 +1,18 @@
+Simulador con las reglas hasta la v10 (estrella e invencibilidad, 28/10).
+Se corre desde la raíz del proyecto. Cada semilla se juega 2 veces cambiando de lado.
+40 semillas = 80 partidas (tarda varios minutos). Con 80 partidas el margen de error es de +-11%.
+
+Enfrentar el bot nuevo contra el anterior:
+    python simulador/run.py src/bot_final/bot_3.10.1.py versions/Claude/3.9.4/bot_3.9.4.py 40
+
+Rival que imita a Alejo (junta X y espera al lado del número que viene):
+    python simulador/run.py src/bot_final/bot_3.10.1.py simulador/rival_heur.py 40 --p2 "{\"PARAMS\":{\"camp\":true,\"x_weight\":1.5}}"
+
+Rival que imita a Agustín (va a muerte por las X):
+    python simulador/run.py src/bot_final/bot_3.10.1.py simulador/rival_heur.py 40 --p2 "{\"PARAMS\":{\"camp\":false,\"x_weight\":2.5}}"
+
+Rival que imita a Santino (junta X, espera y además persigue el número aunque vaya perdiendo):
+    python simulador/run.py src/bot_final/bot_3.10.1.py simulador/rival_heur.py 40 --p2 "{\"PARAMS\":{\"camp\":true,\"x_weight\":2.0,\"chase\":true}}"
+
+Opciones: --seed N (cambia los tableros), --procs N (núcleos), --out archivo.json (guarda cada partida).
+Columnas nuevas: stars = estrellas comidas, rams = veces que cortó al rival chocándolo siendo invencible.

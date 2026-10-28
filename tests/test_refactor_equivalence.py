@@ -9,7 +9,7 @@ from pathlib import Path
 
 TESTS_DIR = Path(__file__).resolve().parent
 ROOT = TESTS_DIR.parent / "src" / "bot_final"
-CURRENT = ROOT / "bot_3.9.3.py"
+CURRENT = ROOT / "bot_3.10.1.py"
 REFERENCE = TESTS_DIR / "REFERENCE_DO_NOT_DEPLOY.snapshot"
 SCENARIOS = 100
 NODE_BUDGET = 24

@@ -66,3 +66,13 @@ dígitos).
 Los reportes de la auditoría competitiva del bot R4 se conservan en
 [auditoria_r4/](auditoria_r4/); sus scripts y resultados crudos se descartaron
 porque apuntaban a carpetas que ya no existen.
+
+## 3.10.1 (28/10/2026, Incremento 3)
+
+- Reglas v10: estrella `⭐` (+100 × multiplicador, crece, 50 turnos invencible),
+  invencibilidad (números fuera de orden gratis, zona de bomba transitable si llego
+  a tiempo), y las `*` / comida de cola propia valen puntos en la búsqueda.
+- Complejidad: todas las funciones de `src/bot_final`, `tests` y `simulador` dan A
+  con xenon, y el CI lo controla. Las refactorizaciones conservan el comportamiento
+  (tests de equivalencia contra el snapshot histórico).
+- `simulador/` pasa a las reglas v10 (`sim_v10.py`).

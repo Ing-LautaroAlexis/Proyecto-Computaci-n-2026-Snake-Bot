@@ -55,13 +55,15 @@ def is_digit(cell):
     return len(cell) == 1 and "1" <= cell <= "9"
 
 
+def digits_on(board):
+    return {int(c) for row in board for c in row if is_digit(c)}
+
+
 def target_digit(board):
     """El número que toca: el que no tiene a su anterior en el tablero."""
-    present = {int(c) for row in board for c in row if is_digit(c)}
-    for d in sorted(present):
-        if (d + 7) % 9 + 1 not in present:
-            return d
-    return min(present) if present else None
+    present = digits_on(board)
+    firsts = [d for d in sorted(present) if (d + 7) % 9 + 1 not in present]
+    return firsts[0] if firsts else min(present, default=None)
 
 
 def find_head(board, side, invincible):
@@ -82,13 +84,20 @@ def min_dist(head, cells):
     return min(abs(head[0] - r) + abs(head[1] - c) for r, c in cells)
 
 
+BOMB_RADIUS = {BIG_BOMB: 2, SMALL_BOMB: 1}
+
+
+def _square(r, c, radius):
+    span = range(-radius, radius + 1)
+    return {(r + dr, c + dc) for dr in span for dc in span}
+
+
 def bomb_zone(board):
     zone = set()
     for r, row in enumerate(board):
         for c, cell in enumerate(row):
-            radius = {BIG_BOMB: 2, SMALL_BOMB: 1}.get(cell, 0)
-            zone.update((r + dr, c + dc) for dr in range(-radius, radius + 1)
-                        for dc in range(-radius, radius + 1) if radius)
+            if cell in BOMB_RADIUS:
+                zone |= _square(r, c, BOMB_RADIUS[cell])
     return zone
 
 
@@ -104,47 +113,62 @@ def other_side(side):
 
 
 # ------------------------------------------------------------- análisis
-def game_view(game):
-    """Junta todo lo que hace falta para dibujar un cuadro (vivo o pasado)."""
+def _side_letter(side):
+    return "A" if str(side).upper() in {"A", "1"} else "B"
+
+
+def _history_frame(game):
+    """(cuadro a mostrar, cuántos cuadros hacia atrás, total de cuadros)."""
     history = game.get("history") or []
     back = min(VIEW["back"], max(0, len(history) - 1))
     frame = dict(game)
     if history:
         frame.update(history[-1 - back])
+    return frame, back, len(history)
+
+
+def game_view(game):
+    """Junta todo lo que hace falta para dibujar un cuadro (vivo o pasado)."""
+    frame, back, frames = _history_frame(game)
     board = frame.get("board") or frame.get("grid") or []
-    me = "A" if str(game.get("my_side", "A")).upper() in {"A", "1"} else "B"
+    me = _side_letter(game.get("my_side", "A"))
     frame.update(
         board=board, me=me,
         my_head=find_head(board, me, frame.get("my_inv", 0)),
         enemy_head=find_head(board, other_side(me), frame.get("enemy_inv", 0)),
-        target=target_digit(board), back=back, frames=len(history),
+        target=target_digit(board), back=back, frames=frames,
     )
     return frame
 
 
+def _apple_row(view, d):
+    cells = cells_of(view["board"], str(d))
+    return (d, len(cells), d * 100 * view.get("my_mult", 1),
+            d * 100 * view.get("enemy_mult", 1),
+            min_dist(view["my_head"], cells), min_dist(view["enemy_head"], cells))
+
+
 def apple_rows(view):
     """Una fila por número: (número, copias, vale para mí, vale para él, dist mía, dist suya)."""
-    board, target = view["board"], view["target"]
-    digits = sorted({int(c) for row in board for c in row if is_digit(c)},
-                    key=lambda d: (d - (target or 1)) % 9)
-    rows = []
-    for d in digits:
-        cells = cells_of(board, str(d))
-        rows.append((d, len(cells), d * 100 * view.get("my_mult", 1),
-                     d * 100 * view.get("enemy_mult", 1),
-                     min_dist(view["my_head"], cells), min_dist(view["enemy_head"], cells)))
-    return rows
+    start = view["target"] or 1
+    digits = sorted(digits_on(view["board"]), key=lambda d: (d - start) % 9)
+    return [_apple_row(view, d) for d in digits]
+
+
+def _is_near(dist):
+    return dist is not None and dist <= CAMP_DIST
+
+
+def _is_far(dist):
+    return dist is not None and dist > CAMP_DIST
 
 
 def enemy_camping(view):
     """Número futuro al lado del cual espera el rival (o None)."""
     rows = apple_rows(view)
-    if not rows or rows[0][5] is None or rows[0][5] <= CAMP_DIST:
+    if not rows or not _is_far(rows[0][5]):
         return None
-    for digit, _, _, _, _, dist in rows[1:]:
-        if dist is not None and dist <= CAMP_DIST:
-            return digit
-    return None
+    return next((row[0] for row in rows[1:] if _is_near(row[5])), None)
 
 
 # ------------------------------------------------------------- dibujo
@@ -158,24 +182,40 @@ def _cell_style(cell, view):
     return styles.get(cell)
 
 
-def _draw_digit(pygame, screen, fonts, cell, rect, view):
+def _rect_center(rect):
+    return rect[0] + rect[2] // 2, rect[1] + rect[3] // 2
+
+
+def _draw_digit_number(pygame, screen, fonts, cell, rect, filled):
+    color = DIGIT_COLORS[int(cell) - 1]
+    center = _rect_center(rect)
+    pygame.draw.circle(screen, color, center, max(3, rect[2] // 2 - 1), 0 if filled else 2)
+    _blit_center(screen, fonts[1].render(cell, True, BG if filled else color), center)
+
+
+def _label_size(label, rect):
+    return label.get_size() if hasattr(label, "get_size") else (rect[2], rect[3])
+
+
+def _draw_digit_points(pygame, screen, fonts, cell, rect, view, filled):
     d = int(cell)
-    color = DIGIT_COLORS[d - 1]
-    center = (rect[0] + rect[2] // 2, rect[1] + rect[3] // 2)
-    filled = d == view["target"]
-    mode = MODES[VIEW["mode"]]
-    if mode == "numero":
-        pygame.draw.circle(screen, color, center, max(3, rect[2] // 2 - 1), 0 if filled else 2)
-        _blit_center(screen, fonts[1].render(cell, True, BG if filled else color), center)
-        return
-    mult = view.get("my_mult", 1) if mode == "mis puntos" else view.get("enemy_mult", 1)
-    label = fonts[2].render(short_points(d * 100 * mult), True, BG)
-    w, h = label.get_size() if hasattr(label, "get_size") else (rect[2], rect[3])
+    key = "my_mult" if MODES[VIEW["mode"]] == "mis puntos" else "enemy_mult"
+    label = fonts[2].render(short_points(d * 100 * view.get(key, 1)), True, BG)
+    w, h = _label_size(label, rect)
+    center = _rect_center(rect)
     box = (center[0] - w // 2 - 2, center[1] - h // 2 - 1, w + 4, h + 2)
-    pygame.draw.rect(screen, color, box, border_radius=3)
+    pygame.draw.rect(screen, DIGIT_COLORS[d - 1], box, border_radius=3)
     if filled:
         pygame.draw.rect(screen, TEXT, box, 2, border_radius=3)
     _blit_center(screen, label, center)
+
+
+def _draw_digit(pygame, screen, fonts, cell, rect, view):
+    filled = int(cell) == view["target"]
+    if MODES[VIEW["mode"]] == "numero":
+        _draw_digit_number(pygame, screen, fonts, cell, rect, filled)
+    else:
+        _draw_digit_points(pygame, screen, fonts, cell, rect, view, filled)
 
 
 def _blit_center(screen, surface, center):
@@ -186,20 +226,32 @@ def _blit_center(screen, surface, center):
         screen.blit(surface, center)
 
 
-def _draw_symbol(pygame, screen, fonts, cell, rect, view):
-    center = (rect[0] + rect[2] // 2, rect[1] + rect[3] // 2)
+def _draw_bomb(pygame, screen, cell, rect):
     half = max(2, rect[2] // 2 - 1)
+    pygame.draw.circle(screen, BOMB, _rect_center(rect), half if cell == BIG_BOMB else half * 2 // 3)
+
+
+def _symbol_labels(view):
+    def tail_color(letter):
+        return MY_HEAD if view["me"] == letter else EN_HEAD
+    return {"X": ("X", X_COLOR), STAR_CH: ("*", STAR), "*": ("*", SHOT_FOOD),
+            TAIL_A: ("a", tail_color("A")), TAIL_B: ("b", tail_color("B"))}
+
+
+def _draw_label(pygame, screen, fonts, cell, rect, view):
+    label = _symbol_labels(view).get(cell)
+    if label:
+        text, color = label
+        _blit_center(screen, fonts[1].render(text, True, color), _rect_center(rect))
+
+
+def _draw_symbol(pygame, screen, fonts, cell, rect, view):
     if is_digit(cell):
         _draw_digit(pygame, screen, fonts, cell, rect, view)
-    elif cell in (BIG_BOMB, SMALL_BOMB):
-        pygame.draw.circle(screen, BOMB, center, half if cell == BIG_BOMB else half * 2 // 3)
+    elif cell in BOMB_RADIUS:
+        _draw_bomb(pygame, screen, cell, rect)
     else:
-        labels = {"X": ("X", X_COLOR), STAR_CH: ("*", STAR), "*": ("*", SHOT_FOOD),
-                  TAIL_A: ("a", MY_HEAD if view["me"] == "A" else EN_HEAD),
-                  TAIL_B: ("b", MY_HEAD if view["me"] == "B" else EN_HEAD)}
-        if cell in labels:
-            text, color = labels[cell]
-            _blit_center(screen, fonts[1].render(text, True, color), center)
+        _draw_label(pygame, screen, fonts, cell, rect, view)
 
 
 def _draw_head(pygame, screen, fonts, rect, color, direction):
@@ -211,6 +263,17 @@ def _draw_head(pygame, screen, fonts, rect, color, direction):
     _blit_center(screen, fonts[1].render(arrows.get(str(direction).lower(), ""), True, BG), center)
 
 
+def _cell_background(pos, value, zone, view):
+    base = BOMB_ZONE if pos in zone and value == " " else CELL_BG
+    return _cell_style(value, view) or base
+
+
+def _paint_cell(pygame, screen, rect, color, cell):
+    pygame.draw.rect(screen, color, rect)
+    if cell >= 12:
+        pygame.draw.rect(screen, GRID_LINE, rect, 1)
+
+
 def _paint_cells(pygame, screen, view, cell, origin):
     """Primera pasada: fondo de cada casilla. Devuelve el rectángulo de cada una."""
     zone = bomb_zone(view["board"]) if VIEW["zones"] else set()
@@ -218,10 +281,7 @@ def _paint_cells(pygame, screen, view, cell, origin):
     for r, row in enumerate(view["board"]):
         for c, value in enumerate(row):
             rect = rects[r, c] = (origin[0] + c * cell, origin[1] + r * cell, cell, cell)
-            base = BOMB_ZONE if (r, c) in zone and value == " " else CELL_BG
-            pygame.draw.rect(screen, _cell_style(value, view) or base, rect)
-            if cell >= 12:
-                pygame.draw.rect(screen, GRID_LINE, rect, 1)
+            _paint_cell(pygame, screen, rect, _cell_background((r, c), value, zone, view), cell)
     return rects
 
 
@@ -280,13 +340,22 @@ def _draw_panel_header(pygame, screen, view, rect, fonts):
         screen.blit(fonts[1].render(f"Gana: {view['winner']}", True, (255, 215, 0)), (x + w - 260, y + 24))
 
 
+def _dash_if_none(value):
+    return "-" if value is None else value
+
+
+def _apple_table_line(row, target):
+    d, copies, mine, his, d_me, d_him = row
+    mark = ">" if d == target else " "
+    return f"{mark}{d} x{copies} {mine:>7} {his:>7}  {_dash_if_none(d_me):>5}  {_dash_if_none(d_him):>5}"
+
+
 def _draw_apple_table(pygame, screen, fonts, view, area):
     x, y = area[0], area[1]
     screen.blit(fonts[1].render("Nro  vale yo  vale el  dist yo  dist el", True, MUTED), (x, y))
-    for i, (d, copies, mine, his, d_me, d_him) in enumerate(apple_rows(view)):
-        mark = ">" if d == view["target"] else " "
-        text = f"{mark}{d} x{copies} {mine:>7} {his:>7}  {d_me if d_me is not None else '-':>5}  {d_him if d_him is not None else '-':>5}"
-        screen.blit(fonts[1].render(text, True, DIGIT_COLORS[d - 1]), (x, y + 20 + i * 18))
+    for i, row in enumerate(apple_rows(view)):
+        text = _apple_table_line(row, view["target"])
+        screen.blit(fonts[1].render(text, True, DIGIT_COLORS[row[0] - 1]), (x, y + 20 + i * 18))
     camp = enemy_camping(view)
     if camp:
         warn = f"OJO: el rival espera al lado del {camp}"

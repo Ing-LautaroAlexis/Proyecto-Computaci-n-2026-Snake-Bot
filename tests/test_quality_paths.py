@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 TESTS_DIR = Path(__file__).resolve().parent
 ROOT = TESTS_DIR.parent / "src" / "bot_final"
-BOT = ROOT / 'bot_3.9.3.py'
+BOT = ROOT / 'bot_3.10.1.py'
 for name in ('pygame', 'websockets'):
     sys.modules.setdefault(name, types.ModuleType(name))
 spec = importlib.util.spec_from_file_location('botv76_quality', BOT)
@@ -402,7 +402,8 @@ class TestRootOrchestrationBranches(unittest.TestCase):
         self.assertEqual(penalties, {'UP': 0})
         layers = {'fe': {'UP': 1}, 'forced': {'UP': 2}, 'tactical_loss': {'UP': 3}, 'tactical_win': {'UP': 4}, 'safe': {'UP': 5}, 'strategy': {'UP': 6}, 'effective_freeze': True, 'freeze': {'UP': 7}}
         score = bot._adjust_root_score(100, 'UP', layers, True, True, {'UP': 8})
-        self.assertEqual(score, 94)
+        # 3.9.4: la trampa forzada pesa FORCED_TRAP_ROOT_SCALE veces más
+        self.assertEqual(score, 94 - 2 * (bot.FORCED_TRAP_ROOT_SCALE - 1))
 
     def test_nontrap_and_final_safety(self):
         ctx = {'candidates': [('UP', (0, 0)), ('RIGHT', (0, 1))], 'grid': simple_grid(), 'my_body': deque([(1, 1), (2, 1)])}

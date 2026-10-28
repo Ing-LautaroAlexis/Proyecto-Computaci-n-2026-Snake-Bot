@@ -1,4 +1,4 @@
-name: Tests and coverage
+name: Tests, coverage and complexity
 on:
   push:
   pull_request:
@@ -21,6 +21,10 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt
       - name: Check syntax
-        run: python -m compileall -q src tests versions arena.py
+        run: python -m compileall -q src tests simulador versions arena.py
+      - name: Complexity (xenon, grade A everywhere)
+        # Incremento 3: cada función, cada módulo y el promedio tienen que dar A.
+        # versions/ es historial y arena.py es una herramienta personal: no se miden.
+        run: xenon --max-absolute A --max-modules A --max-average A --exclude "arena.py" --ignore ".venv,versions,.git" .
       - name: Tests and coverage (minimum 90 percent)
         run: python -m pytest

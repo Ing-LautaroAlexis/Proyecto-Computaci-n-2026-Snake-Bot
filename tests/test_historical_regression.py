@@ -13,7 +13,7 @@ from pathlib import Path
 
 TESTS_DIR = Path(__file__).resolve().parent
 ROOT = TESTS_DIR.parent / "src" / "bot_final"
-BOT = ROOT / 'bot_3.9.3.py'
+BOT = ROOT / 'bot_3.10.1.py'
 REFERENCE = TESTS_DIR / 'REFERENCE_DO_NOT_DEPLOY.snapshot'
 for name in ('pygame', 'websockets'):
     sys.modules.setdefault(name, types.ModuleType(name))

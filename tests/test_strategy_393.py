@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent / "src" / "bot_final"
-BOT = ROOT / "bot_3.9.3.py"
+BOT = ROOT / "bot_3.10.1.py"
 for dependency in ("pygame", "websockets"):
     sys.modules.setdefault(dependency, types.ModuleType(dependency))
 

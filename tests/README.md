@@ -2,7 +2,7 @@
 
 Esta carpeta junta **todo lo que el bot tiene que cumplir**. Cada requisito tiene
 un test que lo verifica automáticamente contra el bot operativo
-`src/bot_final/bot_3.9.3.py` (más `snake_runtime.py` y `snake_visualizer.py`).
+`src/bot_final/bot_3.10.1.py` (más `snake_runtime.py` y `snake_visualizer.py`).
 
 ## Cómo correrlos
 
@@ -31,11 +31,15 @@ La corrida falla si **cualquier test falla** o si la **cobertura baja del 90 %**
 - La comida clásica `*` sigue funcionando igual.
 - `choose_direction` devuelve un movimiento válido en tableros numerados rectangulares.
 
-### 1b. Reglas de octubre (v7 a v10) — `test_v7_v10_rules.py` · 8 tests
+### 1b. Reglas de octubre (v7 a v10) — `test_v7_v10_rules.py` · 15 tests
 
 - Las casillas al alcance de una bomba (💣 a 2, 🧨 a 1, con diagonales) se tratan como muro, y el bot no se mete en ellas.
-- Las `*` de los disparos no esconden los dígitos.
-- `Ⓐ`/`Ⓑ` y `⭐` se pueden pisar; un símbolo desconocido se trata como muro.
+- Invencible, la zona de la bomba deja de ser muro donde llego antes de que se termine (la bomba en sí sigue siendo muro). Si el invencible es el rival, no cambia nada.
+- Las `*` de los disparos no esconden los dígitos y valen +100 × multiplicador.
+- La comida de cola propia (`Ⓐ` si soy A, `Ⓑ` si soy B) suma; la del rival se pisa sin sumar. Un símbolo desconocido se trata como muro.
+- Comer la `⭐` suma +100 × multiplicador, hace crecer y se puede deshacer en la simulación; el bot va a buscar una estrella cercana.
+- Invencible, comer un número fuera de orden no cuesta nada.
+- La estrella vale menos si ya soy invencible (solo suma los turnos que se reinician).
 - Se ignora el selector de variante de los emojis al leer el tablero.
 - Con invencibilidad (cabeza en minúscula) el bot encuentra igual su cabeza.
 - En un tablero de 30×30 decide en menos de 200 ms.
@@ -86,12 +90,13 @@ El runtime WebSocket (turnos, puntajes, ganador, fin de partida, token, hilos)
 y el visualizador Pygame (colores, layout, HUD) funcionan con dobles de prueba,
 sin servidor ni pantalla reales.
 
-### 8. Estrategia nueva (3.9.2 en adelante) — `test_strategy_392.py` · 6 tests, `test_strategy_393.py` · 4 tests
+### 8. Estrategia nueva (3.9.2 en adelante) — `test_strategy_392.py` · 6 tests, `test_strategy_393.py` · 4 tests, `test_strategy_394.py` · 2 tests
 
 - No se come un número si eso le regala al rival el siguiente y el rival vale más (3.9.2).
 - La X vale más que un número chico al principio de la partida (3.9.2).
 - El bot ve las X hasta 40 casillas y va a buscarlas; con la vista de 8 de la 3.9.2 no iba (3.9.3).
 - Una X a la que el rival llega apenas antes también se pelea (3.9.3).
+- No se mete en un pasillo sin salida para comer aunque el número valga mucho (3.9.4).
 
 ## Archivos de apoyo
 
@@ -99,12 +104,12 @@ sin servidor ni pantalla reales.
 | --- | --- |
 | `test_existing_scripts.py` | Hace que pytest ejecute los puntos 5 y 6, que originalmente eran scripts sueltos. |
 | `REFERENCE_DO_NOT_DEPLOY.snapshot` | Bot congelado que sirve de "oráculo" para los puntos 4 y 5. **No borrar ni jugar con él.** |
-| `quality_check.py` | Mide complejidad ciclomática (nota A–F por función). No corre con pytest: `python tests/quality_check.py`. Hoy V8.0 tiene algunas funciones fuera de nota A. |
+| `quality_check.py` | Mide complejidad ciclomática (nota A–F por función) sin dependencias: `python tests/quality_check.py`. Desde la 3.10.1 todo `src/bot_final` da A. El control oficial es xenon en el CI (ver README raíz). |
 | `RUN_TESTS.bat` | Atajo de Windows para correr `python -m pytest` desde la raíz. |
 | `__init__.py` | Marca la carpeta como paquete de Python. |
 
 ## Si cambiás el bot operativo
 
-Todos los tests cargan `src/bot_final/bot_3.9.3.py` por nombre. Si el bot
+Todos los tests cargan `src/bot_final/bot_3.10.1.py` por nombre. Si el bot
 principal pasa a ser otro archivo, hay que actualizar la ruta `BOT` / `CURRENT`
 al principio de cada test.
